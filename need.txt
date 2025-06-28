@@ -1,0 +1,3 @@
+参考 https://deepwiki.com/search/-thinkphp-thinkoctane_5977dd68-7183-42b9-a66e-7ec9386635de
+
+实现一个ThinkPHP 扩展 名为 yangweijie/think-octane 。比参考文档 多 workerman和reactphp支持
