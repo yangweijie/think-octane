@@ -266,36 +266,48 @@ class WorkermanServer extends AbstractServer
      */
     protected function createThinkRequest($request): Request
     {
-        // 转换Workerman请求为ThinkPHP请求
-        $get = $request->get() ?? [];
-        $post = $request->post() ?? [];
-        $files = $request->file() ?? [];
-        $cookie = $request->cookie() ?? [];
         $header = $request->header() ?? [];
+        $server = [];
 
-        // 构建$_SERVER数组
-        $serverData = [
-            'REQUEST_METHOD' => $request->method(),
-            'REQUEST_URI' => $request->uri(),
-            'QUERY_STRING' => $request->queryString(),
-            'HTTP_HOST' => $header['host'] ?? 'localhost',
-            'SERVER_NAME' => $header['host'] ?? 'localhost',
-            'REQUEST_TIME' => time(),
-            'REQUEST_TIME_FLOAT' => microtime(true),
-        ];
-
-        // 添加HTTP头到$_SERVER
+        // 🎯 Luban 修复：正确构建 server 数组（参考 think-worker）
         foreach ($header as $key => $value) {
-            $serverData['HTTP_' . strtoupper(str_replace('-', '_', $key))] = $value;
+            $server['http_' . str_replace('-', '_', $key)] = $value;
         }
 
-        return $this->app->make(Request::class, [
-            'get' => $get,
-            'post' => $post,
-            'files' => $files,
-            'cookie' => $cookie,
-            'server' => $serverData,
-        ]);
+        // 🎯 关键修复：添加标准 $_SERVER 变量
+        $uri = $request->uri();
+        $queryString = $request->queryString();
+        $host = $header['host'] ?? 'localhost';
+        
+        $server['REQUEST_METHOD'] = $request->method();
+        $server['REQUEST_URI'] = $uri;
+        $server['QUERY_STRING'] = $queryString ?? '';
+        $server['HTTP_HOST'] = $host;
+        $server['SERVER_NAME'] = explode(':', $host)[0];
+        $server['SERVER_PORT'] = isset(explode(':', $host)[1]) ? (int)explode(':', $host)[1] : 80;
+        $server['SCRIPT_NAME'] = '/index.php';
+        $server['PHP_SELF'] = '/index.php';
+        $server['SERVER_PROTOCOL'] = 'HTTP/1.1';
+        $server['REQUEST_SCHEME'] = $server['SERVER_PORT'] === 443 ? 'https' : 'http';
+        $server['HTTPS'] = $server['SERVER_PORT'] === 443 ? 'on' : 'off';
+
+        // 重新实例化请求对象，处理请求数据（参考 think-worker）
+        /** @var \think\Request $thinkRequest */
+        $thinkRequest = $this->app->make('request', [], true);
+
+        // 🎯 Luban 关键修复：完全参考 think-worker 的正确设置方式
+        return $thinkRequest
+            ->setMethod($request->method())
+            ->withHeader($header)
+            ->withServer($server)
+            ->withGet($request->get() ?? [])
+            ->withPost($request->post() ?? [])
+            ->withCookie($request->cookie() ?? [])
+            ->withFiles($request->file() ?? [])
+            ->withInput($request->rawBody())
+            ->setBaseUrl($uri)                    // 🎯 关键！设置基础URL
+            ->setUrl($uri . (!empty($queryString) ? '?' . $queryString : ''))  // 🎯 关键！设置完整URL
+            ->setPathinfo(ltrim($request->path(), '/'));     // 🎯 关键！设置路径信息
     }
 
     /**
